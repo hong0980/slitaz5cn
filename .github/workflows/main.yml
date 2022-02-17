@@ -1,201 +1,66 @@
 # This is a basic workflow to help you get started with Actions
 
-name: slitaz-5.0
+name: slitaz-5.0-cn
 
-env:
-  UPLOAD_RELEASE: true
-  UPLOAD_artifact: true
-  TZ: Asia/Shanghai
-#on:
-#  push:
-#    branches: 
-#      - main
-#    schedule:
-#      - cron: 0 20 1 * *
-#    release:
-#      types: [published]
-#on:
-#  push:
-    # Sequence of patterns matched against refs/tags
-#    tags:
-#      - '*'
-#    release:
-#      types: [published]
+# on:
+  # push:
+    # branches: 
+      # - main
+    # schedule:
+      # - cron: 0 20 1 * *
+    # release:
+      # types: [published]
 on:
-  repository_dispatch:
-  workflow_dispatch:
-    inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: true
-        default: 'false'
-  schedule:
-    - cron: 0 11 * * 1        
+  watch:
+    types: started     
 
 jobs:
-
   build:
-
-    name: 自动汉化并封装每周官方映像
-
+    name: slitaz-cn
     runs-on: ubuntu-20.04
 
-    if: github.event.repository.owner.id == github.event.sender.id
+    env:
+      TARGET_DEVICE: ${{matrix.target}}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ["32", "64", "64d"]
 
     steps:
-
-      - name: Checkout
-        uses: actions/checkout@v2
-
       - name: Space cleanup
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          docker rmi `docker images -q`
+          ( docker rmi `docker images -q`
           sudo -E apt-get update
-          sudo -E apt-get -y install zip unzip genisoimage p7zip-full p7zip-rar
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get clean
-          sudo timedatectl set-timezone "$TZ"
+          sudo -E apt-get -qq install zip unzip genisoimage p7zip-full p7zip-rar git
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean 
+          sudo ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          sudo dpkg-reconfigure -f noninteractive tzdata
+          sudo timedatectl set-timezone "Asia/Shanghai" ) &
+
+      - name: Checkout
+        uses: actions/checkout@v2
 
       - name: download iso and unzip iso
         run: |
-          wget http://mirror.slitaz.org/iso/rolling/slitaz-rolling-core64.iso
-          mkdir iso-old
-          7z x slitaz-rolling-core64.iso -y -r -o./iso-old
-          wget -O ./packages/teasiu-5.0.tazpkg https://slitaz.cn/dl/teasiu-5.0.tazpkg
-          wget -O ./packages/updatetime.txt https://slitaz.cn/dl/rolling/slitaz-rolling-core64-chinese-updatetime.txt
-          
+          mkdir firmware
+          [ -f mk-slitaz64.sh ] && bash mk-slitaz64.sh
+          cp -vf *.iso firmware/
+          cd firmware
+          echo "ISO=$(ls)" >>$GITHUB_ENV
+          echo "FIRMWARE=$PWD" >>$GITHUB_ENV
 
-      - name: download iso32 and unzip iso32
-        run: |
-          wget http://mirror.slitaz.org/iso/rolling/slitaz-rolling-core.iso
-          mkdir iso-old32
-          7z x slitaz-rolling-core.iso -y -r -o./iso-old32
-
-      - name: download iso64 and unzip iso64 for dockerd
-        run: |
-          wget http://mirror.slitaz.org/iso/rolling/slitaz-rolling-core64.iso
-          mkdir iso-old64
-          7z x slitaz-rolling-core64.iso -y -r -o./iso-old64
-                              
-      - name: docker build a new rootfs64
-        run: |
-          docker build -t newrootfs -f ./dockerfile-rootfs64 .
-          
-      - name: copy rootfs.gz outside of docker
-        run: |
-          docker run --name myrootfs newrootfs
-          docker cp myrootfs:/tmp/rootfs-new.gz ./iso64/mkiso/rootfs.gz
-          cd ./iso64
-          sh iso.sh
-          cd ../
-
-      - name: docker build a new rootfs32
-        run: |
-          docker build -t newrootfs32 -f ./dockerfile-rootfs32 .
-          
-      - name: copy rootfs32.gz outside of docker
-        run: |
-          docker run --name myrootfs32 newrootfs32
-          docker cp myrootfs32:/tmp/rootfs-new.gz ./iso32/mkiso/rootfs.gz
-          cd ./iso32
-          sh iso.sh
-
-      - name: docker build a new rootfs64d
-        run: |
-          docker build -t newrootfs64d -f ./dockerfile-rootfs64d .
-          
-      - name: copy rootfs64d.gz outside of docker
-        run: |
-          docker run --name myrootfs64 newrootfs64d
-          docker cp myrootfs64:/tmp/rootfs-new.gz ./iso64d/mkiso/rootfs.gz
-          cd ./iso64d
-          sh iso.sh
-
-      - name: Prepare artifact
-        run: |
-          mkdir -p slitaz-artifact
-          cp -a ./slitaz5.0-rolling-core64-cn.iso  slitaz-artifact/
-          cp -a ./slitaz5.0-rolling-core32-cn.iso slitaz-artifact/
-          cp -a ./slitaz5.0-rolling-core64-cn-docker.iso slitaz-artifact/
-
-      - name: upload to artifact
+      - name: upload iso
         uses: actions/upload-artifact@v2
-        if: env.UPLOAD_artifact == 'true' && !cancelled()
         with:
-          name: slitaz5-rolling-core64
-          path: slitaz-artifact/
+          name: ${{env.ISO}}
+          path: firmware/*
 
-      - name: Generate release tag
-        id: tag
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      - name: 上传到WeTransfer
         run: |
-          echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
-          touch release.txt
-          echo "#  hello slitaz!" > release.txt
-          echo "::set-output name=status::success"
-
-      - name: SSH connection to Actions
-        uses: P3TERX/ssh2actions@v1.0.0
-        if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
-        env:
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          
-
-      - name: Upload firmware to release
-        uses: softprops/action-gh-release@v1
-        if: steps.tag.outputs.status == 'success' && !cancelled()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body_path: release.txt
-          files: slitaz-artifact/*
-
-      - name: Delete workflow runs
-        uses: GitRML/delete-workflow-runs@main
-        with:
-          retain_days: 1
-          keep_minimum_runs: 3
-
-      - name: Remove old Releases
-        uses: dev-drprasad/delete-older-releases@v0.1.0
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        with:
-          keep_latest: 3
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#      - name: Upload Release Asset
-#        id: upload-release-asset 
-#        uses: actions/upload-release-asset@v1
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        with:
-#          upload_url: ${{ steps.tag.outputs.upload_url }}
-#          asset_path: ./slitaz5.0-rolling-core64-cn.iso
-#          asset_name: slitaz5.0-rolling-core64-cn.iso
-#          asset_content_type: application/iso
-                 
-  slitaz:
-    runs-on: ubuntu-20.04
-    needs: [build]
-    steps:
-      - name: Download a single artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: slitaz5-rolling-core64
-          path: slitaz-artifact/
-      - name: Upload to SourceForge
-        run: |
-          echo "$DEPLOY_KEY" > $HOME/deploy_key
-          cat $HOME/deploy_key
-          set -ex
-          chmod 600 $HOME/deploy_key
-          Localslitaz=`ls -d slitaz-artifact`
-          Remoteslitaz=teasiu@frs.sourceforge.net:/home/frs/project/slitaz/slitaz5-rolling-core64
-          rsync -e "ssh -i $HOME/deploy_key -oStrictHostKeyChecking=no -oBatchMode=yes" -va --delete $Localslitaz/*.iso $Remoteslitaz
-        env:
-          DEPLOY_KEY: ${{ secrets.TEASIU }}
+          curl -fsSL git.io/file-transfer | sh
+          ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+          echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
+          echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
