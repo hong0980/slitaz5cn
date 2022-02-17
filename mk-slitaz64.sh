@@ -4,7 +4,7 @@
 sed -i 's|iso.*boot|iso-old/boot|' dockerfile-rootfs*
 sed -i 's/slitaz/\$(date +%m%d-%H%M)-slitaz/' ./*/iso.sh
 sed -i '1i\https://mirrors.aliyun.com/slitaz' packages/mirrors.list
-cat <<-\EOF >>packages/gen-slitaz*
+cat <<-\EOF > | tee -a packages/gen-slitaz*
 	wget -O $ROOTFS/bin/bpm git.io/bpm && chmod +x $ROOTFS/bin/bpm
 	wget -O $ROOTFS/bin/ansi git.io/ansi && chmod +x $ROOTFS/bin/ansi
 EOF
