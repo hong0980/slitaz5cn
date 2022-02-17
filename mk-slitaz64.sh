@@ -6,6 +6,7 @@ sed -i 's/slitaz/\$(date +%m%d-%H%M)-slitaz/' ./*/iso.sh
 sed -i '1i\https://mirrors.aliyun.com/slitaz' packages/mirrors.list
 sed -i '/profile/aecho "Asia/Shanghai" > $ROOTFS/etc/TZ\nwget -O $ROOTFS/bin/bpm git.io/bpm --no-check-certificate && chmod +x $ROOTFS/bin/bpm\nwget -O $ROOTFS/bin/ansi git.io/ansi --no-check-certificate && chmod +x $ROOTFS/bin/ansi' packages/gen-slitaz*
 wget -qO packages/updatetime.txt slitaz.cn/dl/rolling/slitaz-rolling-core64-chinese-updatetime.txt --no-check-certificate
+sed -i '/dockerd.tazpkg/ {s/ --nodeps//}' packages/gen-slitaz*
 
 ps="dockerd sudocn-1.8.4 ghost-5.0.1 linux64-3.16.55 linux-3.16.55 yong-2.5.0 transmission-web-contrl-1.61 teasiu-5.0 xarchiver-cn-0.5.2 rar-6.0.0"
 for p in $ps; do
